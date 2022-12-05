@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8"/>
+	<title>Spinning Cubes</title>
+	<style>
+		body {
+			background-color: #999999;
+			text-align: center;
+		}
+
+		canvas {
+			margin: 100px auto 0;
+		}
+	</style>
+	<script src="./math.js"></script>
+</head>
+<body>
+<canvas id="canvas" width="600" height="600"></canvas>
+<script>
+function HyperCube(dimension) {
+	this.dimension = dimension;
+
+	this.getPoints = function () {
+		const points = [];
+
+		for (let i = 0; i < (1 << this.dimension); i++) {
+			points.push(i);
+		}
+
+		return points;
+	};
+
+	this.getEdges = function () {
+		const points = this.getPoints();
+		const edges = [];
+
+		const limit = 1 << this.dimension;
+
+		for (let d = 0; d < this.dimension; d++) {
+			const jump = 1 << d;
+			const skip = 2 << d;
+
+			for (let i = 0; i < limit; i += skip) {
+				for (let j = 0; j < jump; j++) {
+					const p1 = points[i + j];
+					const p2 = points[i + j + jump];
+
+					const p1a = [];
+					const p2a = [];
+
+					for (let k = 0; k < this.dimension; k ++) {
+						p1a.push((p1 & 1 << k) >> k);
+						p2a.push((p2 & 1 << k) >> k);
+					}
+
+					edges.push([p1a, p2a]);
+				}
+			}
+		}
+
+		return edges;
+	};
+}
+
+function Runner(canvas) {
+	const context = canvas.getContext('2d');
+	const WIDTH = canvas.width;
+	const HEIGHT = canvas.height;
+
+	const ROWS = 4;
+	const COLS = 4;
+	
+	const SPEED = 5;
+	const DEPTH_OF_FIELD = 1600;
+	const CUBE_RADIUS = 40;
+
+	function Point(x, y, z) {
+		this.x = x;
+		this.y = y;
+		this.z = z;
+
+		this.t = function (t) {
+			if (typeof t === 'function') {
+				this.x = t(this.x);
+				this.y = t(this.y);
+				this.z = t(this.z);
+			}
+
+			return this;
+		};
+	};
+
+	let vanish = new Point(WIDTH / 2, HEIGHT / 2, DEPTH_OF_FIELD);
+	
+	function Cube(center, radius, color) {
+		this.center = center;
+		this.color = color;
+		this.rot = [0, 0, 0];
+		this._rotationMatrix = math.identity(3);
+
+		let hyper = new HyperCube(3);
+
+		this.getEdges = function() {
+			return hyper.getEdges().map(edge => {
+				return edge.map(p => p.map(c => (c * 2 - 1) * radius)).map(point => {
+					let p = math.multiply(this._rotationMatrix, point)._data;
+
+					return [p[0] + this.center.x, p[1] + this.center.y, p[2] + this.center.z];
+				});
+			});
+		};
+		
+		this.getProjectedEdges = function () {
+			return this.getEdges().map(edge => {
+				let [[x1, y1, z1], [x2, y2, z2]] = edge;
+				
+				let scale1 = 1 - z1 / DEPTH_OF_FIELD;
+				let scale2 = 1 - z2 / DEPTH_OF_FIELD;
+				
+				let vx1 = (vanish.x - x1) * scale1;
+				let vy1 = (vanish.y - y1) * scale1;
+				let vx2 = (vanish.x - x2) * scale2;
+				let vy2 = (vanish.y - y2) * scale2;
+				
+				return [vanish.x - vx1, vanish.y - vy1, vanish.x - vx2, vanish.y - vy2];
+			});
+		}
+
+		this.rotate = function (x, y, z) {
+			this.rot[0] = x;
+			this.rot[1] = y;
+			this.rot[2] = z;
+
+			this._rotationMatrix = this.getRotationMatrix();
+		};
+
+		this.getRotationMatrix = function () {
+			let x = math.matrix([
+				[1, 0, 0],
+				[0, math.cos(this.rot[0]), -math.sin(this.rot[0])],
+				[0, math.sin(this.rot[0]),  math.cos(this.rot[0])],
+			]);
+
+			let y = math.matrix([
+				[ math.cos(this.rot[1]), 0, math.sin(this.rot[1])],
+				[ 0, 1, 0],
+				[-math.sin(this.rot[1]), 0, math.cos(this.rot[1])],
+			]);
+
+			let z = math.matrix([
+				[math.cos(this.rot[2]), -math.sin(this.rot[2]), 0],
+				[math.sin(this.rot[2]),  math.cos(this.rot[2]), 0],
+				[0, 0, 1],
+			]);
+
+			return math.multiply(x, math.multiply(y, z));
+		};
+
+		this.run = function() {
+			this._rotationMatrix = math.multiply(this._rotationMatrix, this.getRotationMatrix());
+		}
+	};
+
+	let boxes = [];
+	for (let i = 0; i < WIDTH; i += WIDTH / COLS) {
+		for (let j = 0; j < HEIGHT; j += HEIGHT / ROWS) {
+			for (let k = 0; k < 1; k++) {
+				boxes.push(new Cube(
+					new Point(i + WIDTH / (2 * COLS), j + HEIGHT / (2 * COLS), k * 50), CUBE_RADIUS,
+				));
+			}
+		}
+	}
+
+	boxes[0].rotate(Math.PI / 60, 0, 0);
+	boxes[1].rotate(Math.PI / 60, Math.PI / 120, 0);
+	boxes[2].rotate(Math.PI / 60, 0, Math.PI / 120);
+	boxes[3].rotate(Math.PI / 60, Math.PI / 120, Math.PI / 120);
+
+	boxes[4].rotate(0, Math.PI / 60, 0);
+	boxes[5].rotate(Math.PI / 120, Math.PI / 60, 0);
+	boxes[6].rotate(0, Math.PI / 60, Math.PI / 120);
+	boxes[7].rotate(Math.PI / 120, Math.PI / 60, Math.PI / 120);
+
+	boxes[8].rotate(0, 0, Math.PI / 60);
+	boxes[9].rotate(Math.PI / 120, 0, Math.PI / 60);
+	boxes[10].rotate(0, Math.PI / 120, Math.PI / 60);
+	boxes[11].rotate(Math.PI / 120, Math.PI / 120, Math.PI / 60);
+	
+	boxes[12].rotate(Math.PI / 60, Math.PI / 60, 0);
+	boxes[13].rotate(Math.PI / 60, 0, Math.PI / 60);
+	boxes[14].rotate(0, Math.PI / 60, Math.PI / 60);
+	boxes[15].rotate(Math.PI / 60, Math.PI / 60, Math.PI / 60);
+
+	this.run = function () {
+		boxes.forEach(box => {
+			box.run();
+		});
+
+		window.requestAnimationFrame(draw);
+	};
+
+	let mod = 0;
+
+	const draw = function () {
+		context.fillStyle = '#000000';
+		context.fillRect(0, 0, WIDTH, HEIGHT);
+		context.strokeStyle = '#FFFFFF';
+		
+		boxes.forEach(box =>
+			box.getProjectedEdges().forEach(edge => {
+				context.beginPath();
+				context.moveTo(edge[0], edge[1]);
+				context.lineTo(edge[2], edge[3]);
+				context.stroke();
+			})
+		);
+
+		const imageData = context.getImageData(0, 0, WIDTH, HEIGHT);
+		const data = imageData.data;
+		
+		for (let x = 0; x < WIDTH; x++) {
+			for (let y = 0; y < HEIGHT; y++) {
+				let dataIndex = y * WIDTH * 4 + x * 4;
+
+				data[dataIndex + mod] = 0;
+			}
+		}
+
+		context.putImageData(imageData, 0, 0);
+	};
+
+	setInterval(this.run, 32);
+}
+
+const canvas = document.getElementById('canvas');
+const runner = new Runner(canvas);
+</script>
+</body>
+</html>
